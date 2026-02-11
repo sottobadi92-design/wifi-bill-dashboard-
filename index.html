@@ -1,76 +1,304 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WiFi Bill Manager</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WiFi Billing Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 :root{
-    --bg:#f4f6f9;
-    --card:#ffffff;
-    --text:#222;
-    --primary:#4a6fa5;
-    --accent:#3498db;
+ --bg:#f4f6f9;
+ --card:#fff;
+ --text:#222;
+ --primary:#2c3e50;
+ --accent:#3498db;
 }
-
 body.dark{
-    --bg:#121212;
-    --card:#1e1e1e;
-    --text:#f5f5f5;
-    --primary:#222;
-    --accent:#4fc3f7;
+ --bg:#121212;
+ --card:#1e1e1e;
+ --text:#eee;
+ --primary:#000;
+ --accent:#00bcd4;
 }
 
 body{
-    margin:0;
-    font-family:Arial, sans-serif;
-    background:var(--bg);
-    color:var(--text);
+ margin:0;
+ font-family:system-ui;
+ background:var(--bg);
+ color:var(--text);
+ transition:.3s;
 }
 
 header{
-    background:var(--primary);
-    color:white;
-    padding:15px;
-    text-align:center;
+ background:var(--primary);
+ color:#fff;
+ padding:12px;
+ text-align:center;
 }
 
 .container{
-    padding:15px;
-    max-width:1000px;
-    margin:auto;
+ max-width:1000px;
+ margin:auto;
+ padding:12px;
 }
 
-button,select,input{
-    padding:8px;
-    margin:5px 0;
-    border-radius:6px;
-    border:none;
+button,input,select{
+ padding:8px;
+ border-radius:10px;
+ border:1px solid #ccc;
+ margin:5px 0;
 }
 
 button{
-    background:var(--accent);
-    color:white;
-    cursor:pointer;
+ background:var(--accent);
+ color:#fff;
+ cursor:pointer;
 }
 
 .dashboard{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
-    gap:10px;
-    margin-top:15px;
+ display:grid;
+ grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+ gap:10px;
 }
 
 .card{
-    background:var(--card);
-    padding:10px;
-    border-radius:10px;
-    box-shadow:0 3px 8px rgba(0,0,0,0.1);
-    cursor:pointer;
+ background:var(--card);
+ padding:12px;
+ border-radius:14px;
+ box-shadow:0 4px 12px rgba(0,0,0,.12);
+ transition:.25s;
+}
+.card:hover{transform:translateY(-3px);}
+
+.entry{
+ background:rgba(0,0,0,.05);
+ padding:10px;
+ border-radius:8px;
+ margin-top:8px;
 }
 
-.card.paid{border-left:5px solid green;}
-.card.pending{border-left:5px solid red;}
+canvas{background:var(--card);margin-top:20px;border-radius:12px;}
 
-.details{
-    margin-top:2
+textarea{width:100%;height:80px;margin-top:10px;}
+
+</style>
+</head>
+
+<body>
+
+<header>
+<h2>WiFi Billing Dashboard</h2>
+<button onclick="toggleDark()">Dark Mode</button>
+<button onclick="exportCSV()">Export CSV</button>
+<button onclick="exportJSON()">Backup JSON</button>
+<input type="file" onchange="importJSON(event)">
+</header>
+
+<div class="container">
+
+<select id="year"></select>
+
+<div class="dashboard" id="months"></div>
+
+<h3 id="monthTitle"></h3>
+<div id="entries"></div>
+
+<h3>Dashboard Graph</h3>
+<canvas id="pieChart"></canvas>
+<canvas id="barChart"></canvas>
+
+<h3>Reminder Text Generator</h3>
+<textarea id="msgBox" readonly></textarea>
+
+</div>
+
+<script>
+
+const TOTAL=707;
+
+const members=[
+ {name:"Tun",share:207},
+ {name:"Mrinmoy",share:200},
+ {name:"Tanmay",share:150},
+ {name:"Mejo Jethu",share:150}
+];
+
+const months=["Jan","Feb","Mar","Apr","May","Jun",
+"Jul","Aug","Sep","Oct","Nov","Dec"];
+
+let db=JSON.parse(localStorage.getItem("wifiDB"))||{};
+let activeMonth=null;
+
+const yearSel=document.getElementById("year");
+for(let y=2024;y<=2035;y++) yearSel.innerHTML+=`<option>${y}</option>`;
+
+function save(){
+ localStorage.setItem("wifiDB",JSON.stringify(db));
+ updateCharts();
+}
+
+function renderMonths(){
+ let y=yearSel.value;
+ let div=document.getElementById("months");
+ div.innerHTML="";
+
+ months.forEach(m=>{
+  let key=y+"-"+m;
+  let total=0;
+  if(db[key]) db[key].forEach(e=>total+=e.paid||0);
+
+  div.innerHTML+=`
+  <div class="card" onclick="openMonth('${m}')">
+   <b>${m}</b><br>
+   Paid ₹${total}<br>
+   Remain ₹${TOTAL-total}
+  </div>`;
+ });
+}
+
+function openMonth(m){
+ activeMonth=m;
+ let y=yearSel.value;
+ let key=y+"-"+m;
+
+ if(!db[key]){
+  db[key]=members.map(mem=>({
+   name:mem.name,
+   share:mem.share,
+   paid:0
+  }));
+ }
+
+ save();
+ renderEntries();
+ document.getElementById("monthTitle").innerText=m+" Details";
+}
+
+function renderEntries(){
+ let y=yearSel.value;
+ let key=y+"-"+activeMonth;
+ let div=document.getElementById("entries");
+ div.innerHTML="";
+
+ db[key].forEach((e,i)=>{
+
+  let remain=e.share-e.paid;
+  let status=remain<=0?"Paid":"Pending";
+
+  div.innerHTML+=`
+  <div class="entry">
+   <b>${e.name}</b><br>
+   Advisory ₹${e.share}<br>
+   Paid ₹${e.paid}<br>
+   Balance ₹${remain}<br>
+   <input type="number"
+    placeholder="Add payment"
+    onchange="addPayment(${i},this.value)">
+   <button onclick="generateMsg('${e.name}',${e.share},${e.paid})">
+   Reminder Text
+   </button>
+  </div>`;
+ });
+}
+
+function addPayment(i,val){
+ let y=yearSel.value;
+ let key=y+"-"+activeMonth;
+ db[key][i].paid+=Number(val)||0;
+ save();
+ renderEntries();
+ renderMonths();
+}
+
+function generateMsg(name,share,paid){
+ let remain=share-paid;
+ let msg=remain<=0 ?
+`Hi ${name}, payment received ₹${paid}. Thanks.` :
+`Hi ${name}, WiFi share approx ₹${share}. Pending ₹${remain}. Please pay when convenient.`;
+document.getElementById("msgBox").value=msg;
+}
+
+function toggleDark(){
+ document.body.classList.toggle("dark");
+}
+
+/* Backup */
+function exportCSV(){
+ let rows=["Year,Month,Name,Share,Paid"];
+ for(let k in db){
+  let [y,m]=k.split("-");
+  db[k].forEach(e=>{
+   rows.push(`${y},${m},${e.name},${e.share},${e.paid}`);
+  });
+ }
+ let blob=new Blob([rows.join("\n")],{type:"text/csv"});
+ let a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="wifi-data.csv";
+ a.click();
+}
+
+function exportJSON(){
+ let blob=new Blob([JSON.stringify(db)],{type:"application/json"});
+ let a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="wifi-backup.json";
+ a.click();
+}
+
+function importJSON(e){
+ let file=e.target.files[0];
+ let reader=new FileReader();
+ reader.onload=()=>{
+  db=JSON.parse(reader.result);
+  save();
+  renderMonths();
+ };
+ reader.readAsText(file);
+}
+
+/* Charts */
+let pieChart,barChart;
+
+function updateCharts(){
+ let totals={};
+ members.forEach(m=>totals[m.name]=0);
+
+ for(let k in db){
+  db[k].forEach(e=>totals[e.name]+=e.paid);
+ }
+
+ let pieData=Object.values(totals);
+
+ if(pieChart) pieChart.destroy();
+ pieChart=new Chart(document.getElementById("pieChart"),{
+  type:'pie',
+  data:{labels:Object.keys(totals),
+  datasets:[{data:pieData}]}
+ });
+
+ let monthly=months.map(m=>{
+  let key=yearSel.value+"-"+m;
+  let t=0;
+  if(db[key]) db[key].forEach(e=>t+=e.paid);
+  return t;
+ });
+
+ if(barChart) barChart.destroy();
+ barChart=new Chart(document.getElementById("barChart"),{
+  type:'bar',
+  data:{labels:months,
+  datasets:[{data:monthly}]}
+ });
+}
+
+yearSel.onchange=renderMonths;
+renderMonths();
+updateCharts();
+
+</script>
+
+</body>
+</html>
